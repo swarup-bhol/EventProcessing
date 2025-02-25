@@ -8,24 +8,22 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.util.*;
+import java.util.Set;
 import java.util.concurrent.*;
 
 @Service
 public class JsonFileMonitorService {
-
     private static final Logger logger = LoggerFactory.getLogger(JsonFileMonitorService.class);
+    private static final String PIPE_PATH = "/tmp/json_pipe";
 
     private final AppConfig appConfig;
-    private final JsonFileWriterService fileWriterService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
     private final Set<Integer> processedUserIds = ConcurrentHashMap.newKeySet();
     private long lastKnownSize = 0;
 
-    public JsonFileMonitorService(AppConfig appConfig, JsonFileWriterService fileWriterService) {
+    public JsonFileMonitorService(AppConfig appConfig) {
         this.appConfig = appConfig;
-        this.fileWriterService = fileWriterService;
         startMonitoring();
     }
 
@@ -59,7 +57,7 @@ public class JsonFileMonitorService {
                     if (!processedUserIds.contains(userId)) {
                         processedUserIds.add(userId);
                         logger.info("New user detected: {}", userNode);
-                        fileWriterService.writeToFile(userNode);
+                        writeToPipe(userNode);
                     }
                 }
             }
@@ -67,6 +65,17 @@ public class JsonFileMonitorService {
             lastKnownSize = inputFile.length();
         } catch (IOException e) {
             logger.error("Error reading file", e);
+        }
+    }
+
+    private void writeToPipe(JsonNode userNode) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(PIPE_PATH, true))) {
+            writer.write(userNode.toString());
+            writer.newLine();
+            writer.flush();
+            logger.info("✅ Written to pipe: {}", userNode);
+        } catch (IOException e) {
+            logger.error("❌ Error writing to pipe", e);
         }
     }
 
